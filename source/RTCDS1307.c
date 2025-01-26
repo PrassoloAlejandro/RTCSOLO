@@ -1,4 +1,12 @@
 /*
+ * RTC_DS1307.c
+ *
+ *  Created on: 14 ene. 2025
+ *      Author: aguil
+ */
+
+
+/*
  * Copyright 2016-2025 NXP
  * All rights reserved.
  *
@@ -20,80 +28,8 @@
 #include "pin_mux.h"
 #include "time.h"
 
-#define DS1307_I2C_ADDRESS 0x68
+#include "RTC_DS1307.h"
 
-volatile uint16_t flagTick = 0;
-uint32_t baudRate = 40000;
-uint32_t frequency = 1000000;
-
-/*--------------------------------------
- * Function Prototypes
- *--------------------------------------*/
-void delay_ms(int msec);
-void initI2C(void);
-
-status_t DS1307_GetTime(uint8_t *hours, uint8_t *minutes, uint8_t *seconds);
-status_t DS1307_SetTime(uint8_t hours, uint8_t minutes, uint8_t seconds);
-
-status_t DS1307_GetDate(uint8_t *day, uint8_t *month, uint8_t *year);
-status_t DS1307_SetDate(uint8_t day, uint8_t month, uint8_t year);
-
-status_t DS1307_ReadRegisters(uint8_t reg, uint8_t *data, size_t length);
-status_t DS1307_WriteRegister(uint8_t reg, uint8_t value);
-
-uint8_t BCDToDec(uint8_t val);
-uint8_t DecToBCD(uint8_t val);
-
-void setCurrentTime(void);
-
-/*--------------------------------------
- * Main Function
- *--------------------------------------*/
-int main(void) {
-    uint8_t hours, minutes, seconds;
-    uint8_t day, month, year;
-
-    initI2C();
-    setCurrentTime();
-
-    while (1) {
-		 if (DS1307_GetTime(&hours, &minutes, &seconds) == kStatus_Success &&
-				DS1307_GetDate(&day, &month, &year) == kStatus_Success) {
-				printf("Date: %02d/%02d/%02d Time: %02d:%02d:%02d\n", day, month, year, hours, minutes, seconds);
-			} else {
-				printf("Failed to read time or date!\n");
-			}
-		 SDK_DelayAtLeastUs(500000, CLOCK_GetFreq(kCLOCK_CoreSysClk)); // Delay 0.5 seconds
-    }
-
-    return 0;
-}
-
-/*--------------------------------------
- * I2C Initialization Function
- *--------------------------------------*/
-void initI2C(void) {
-    BOARD_InitDebugConsole();
-
-    CLOCK_Select(kI2C1_Clk_From_MainClk);
-    CLOCK_EnableClock(kCLOCK_Swm);
-    SWM_SetMovablePinSelect(SWM0, kSWM_I2C1_SDA, kSWM_PortPin_P0_27); // Pin 13
-    SWM_SetMovablePinSelect(SWM0, kSWM_I2C1_SCL, kSWM_PortPin_P0_26); // Pin 12
-    CLOCK_DisableClock(kCLOCK_Swm);
-
-    i2c_master_config_t masterConfig;
-    I2C_MasterGetDefaultConfig(&masterConfig);
-    masterConfig.baudRate_Bps = baudRate;
-    I2C_MasterInit(I2C1_BASE, &masterConfig, frequency);
-}
-
-/*--------------------------------------
- * Delay Function
- *--------------------------------------*/
-void delay_ms(int msec) {
-    flagTick = 0;
-    while (flagTick <= msec);
-}
 
 /*--------------------------------------
  * Conversion Functions
@@ -118,12 +54,13 @@ status_t DS1307_WriteRegister(uint8_t reg, uint8_t value) {
         printf("I2C Start Failed! Status: %d\n", status);
         return status;
     }
-
+    I2C_ResetBus(I2C1_BASE);
     status = I2C_MasterWriteBlocking(I2C1_BASE, data, sizeof(data), kI2C_TransferDefaultFlag);
     if (status != kStatus_Success) {
         printf("I2C Write Failed! Status: %d\n", status);
         return status;
     }
+
 
     status = I2C_MasterStop(I2C1_BASE);
     if (status != kStatus_Success) {
@@ -259,12 +196,19 @@ status_t DS1307_GetDate(uint8_t *day, uint8_t *month, uint8_t *year) {
     return kStatus_Success;
 }
 
-
-
-
 /*--------------------------------------
- * Interrupt Handler
+ * Get RTC Date and Time Function
  *--------------------------------------*/
-void SysTick_Handler(void) {
-    flagTick++;
+rtc_datetime_t GetRTCDateTime(void) {
+    rtc_datetime_t datetime = {0};
+
+    if (DS1307_GetTime(&datetime.hours, &datetime.minutes, &datetime.seconds) == kStatus_Success &&
+        DS1307_GetDate(&datetime.day, &datetime.month, &datetime.year) == kStatus_Success) {
+        return datetime; // Retorna los datos correctamente leídos
+    }
+
+    // Si falla, regresa un valor predeterminado
+    printf("Failed to read RTC date and time.\n");
+    return datetime;
 }
+
